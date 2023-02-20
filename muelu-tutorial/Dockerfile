@@ -1,90 +1,53 @@
-# build docker container using
-#   docker build --build-arg username=tutorial -t tawiesn/muelu-tutorial .
-# run the container using
-#   docker run -i -t tawiesn/muelu-tutorial /bin/bash
-#   docker run -dP -p 5901:5901 tawiesn/muelu-tutorial
-# This image contains a basic CentOS with a standard development environment
-# (compilers, MPI, ...)
-#
-FROM tawiesn/dev-tpl
-ARG username=tutorial
+##############
+# Base image #
+##############
+FROM rockylinux:9 AS base
 
-#########################
+# old Tobias approach to install LXDE, VNC server
+#RUN yum update; \
+#    yum -y install htop xterm nano; \
+#    yum -y install openbox; \
+#    yum -y install tightvnc-server; \
+#    yum clean all
 
-# Install LXDE, VNC server
-RUN yum update; \
-    yum -y install htop xterm nano; \
-    yum -y install openbox; \
-    yum -y install tightvnc-server; \
-    yum clean all
+RUN yum -y install less epel-release environment-modules wget nano git
+RUN yum -y install automake make cmake
+RUN yum -y install gcc gcc-gfortran gcc-c++ python
 
-#########################    
-    
-RUN yum update; \
-    yum -y install doxygen; \
-    yum -y install gnuplot; \
-    yum -y install gedit; \
-    yum -y install xfce4-terminal; \
-    yum clean all;
+RUN echo root:Docker | chpasswd
 
-# create user (but run the commands as root)
-RUN adduser $username
-WORKDIR /home/$username
+##############
+# TPLs image #
+##############
+FROM base AS tpls
 
-# copy files to image
-COPY download_trilinos.sh /home/$username/
-COPY install_trilinos.sh /home/$username/
-COPY do-configure /home/$username/
+# failed so far: htop, blas-devel, lapack-devel
+RUN yum -y install openmpi openmpi-devel hdf5 hdf5-devel hdf5-openmpi hdf5-openmpi-devel
+RUN yum -y install netcdf netcdf-devel netcdf-openmpi-devel netcdf-openmpi
+RUN yum -y install blas lapack boost boost-devel atlas atlas-devel
 
-# copy or download trilinos source files
-WORKDIR /home/$username
-RUN chmod 750 download_trilinos.sh
-RUN ./download_trilinos.sh
-#COPY trilinos-12.8.1-Source.tar.gz /home/$username
-RUN mv trilinos-12.8.1-Source.tar.gz trilinos.tar.gz
+##############
+# Tril image #
+##############
+FROM tpls AS trilinos
 
-##extract trilinos source file
-RUN tar xvf trilinos.tar.gz
-RUN rm -f trilinos.tar.gz
-RUN mv trilinos-12.8.1-Source trilinos
-RUN mkdir trilinos-build
+ARG TRILINOS_CONFIGFILE=do-configure-trilinos.sh
+ARG TRILINOS_VERSION=13-4-1
 
-# switch to new user
-RUN chown -R $username: /home/$username
-RUN echo 'module load mpi/openmpi-x86_64' >> /home/$username/.bash_profile
+WORKDIR /opt/trilinos/
+#RUN wget -nv https://github.com/trilinos/Trilinos/archive/refs/tags/trilinos-release-$TRILINOS_VERSION.tar.gz
+RUN git clone https://github.com/trilinos/Trilinos.git source
 
-#######################
+# extract trilinos source file
+RUN mkdir /opt/trilinos/build
+RUN mkdir /opt/trilinos/install
+#RUN tar xfz /opt/trilinos/trilinos-release-$TRILINOS_VERSION.tar.gz
+#RUN mv /opt/trilinos/Trilinos-trilinos-release-$TRILINOS_VERSION /opt/trilinos/source
+#RUN rm -f /opt/trilinos/trilinos-release-$TRILINOS_VERSION.tar.gz
 
-# Set user for VNC server (USER is only for build)
-ENV USER $username
+# copy configure script to build directory
+COPY $TRILINOS_CONFIGFILE /opt/trilinos/build/do-configure-trilinos.sh
 
-# Copy xstartup file
-COPY Xclients /home/$username/.Xclients 
-COPY password.txt /home/$username
-RUN chown -R $username: /home/$username
-
-# Copy VNC script that handles restarts
-COPY vnc.sh /opt/
-RUN chown $username: /opt/vnc.sh
-
-# Expose VNC port
-EXPOSE 5901
-
-########################
-# switch to user
-########################
-USER $username
-
-# Set default password
-RUN cat password.txt password.txt | vncpasswd && \
-  rm password.txt
-
-CMD ["/opt/vnc.sh"]
-
-########################
-## compile trilinos
-# must be run as user!
-RUN ./install_trilinos.sh
-
-########################
-
+WORKDIR /opt/trilinos/build
+RUN ./do-configure-trilinos.sh
+RUN make -j4 && make install
