@@ -1,7 +1,7 @@
 ##############
 # Base image #
 ##############
-FROM spack/centos-stream AS base
+FROM dokken/centos-stream-9 AS base
 
 # old Tobias approach to install LXDE, VNC server
 #RUN yum update; \
@@ -12,6 +12,7 @@ FROM spack/centos-stream AS base
 
 RUN yum -y install less epel-release environment-modules wget nano git
 RUN yum -y install automake make
+RUN yum -y install gcc gcc-gfortran gcc-c++ python3.11
 
 # manually roll CMake 3.26.1 since Trilinos requires 3.23+
 RUN yum -y install openssl-devel
@@ -21,8 +22,7 @@ RUN tar -xzvf cmake-3.26.1.tar.gz
 WORKDIR CMake-3.26.1
 RUN ./bootstrap && make && make install
 
-RUN yum -y install gcc gcc-gfortran gcc-c++ python3.11
-
+# set root password to Docker
 RUN echo root:Docker | chpasswd
 
 ##############
