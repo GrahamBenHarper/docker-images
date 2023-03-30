@@ -1,7 +1,7 @@
 ##############
 # Base image #
 ##############
-FROM rockylinux:9 AS base
+FROM spack/centos-stream AS base
 
 # old Tobias approach to install LXDE, VNC server
 #RUN yum update; \
@@ -11,8 +11,17 @@ FROM rockylinux:9 AS base
 #    yum clean all
 
 RUN yum -y install less epel-release environment-modules wget nano git
-RUN yum -y install automake make cmake
-RUN yum -y install gcc gcc-gfortran gcc-c++ python
+RUN yum -y install automake make
+
+# manually roll CMake 3.26.1 since Trilinos requires 3.23+
+RUN yum -y install openssl-devel
+WORKDIR /opt
+RUN wget -O cmake-3.26.1.tar.gz https://github.com/Kitware/CMake/archive/refs/tags/v3.26.1.tar.gz
+RUN tar -xzvf cmake-3.26.1.tar.gz
+WORKDIR CMake-3.26.1
+RUN ./bootstrap && make && make install
+
+RUN yum -y install gcc gcc-gfortran gcc-c++ python3.11
 
 RUN echo root:Docker | chpasswd
 
